@@ -1,15 +1,42 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <pthread.h>
+
+void *handle_thread(void *client_socket)
+{
+	char buf[BUFSIZ];
+	unsigned int len;
+	int client_sockfd = *(int *)client_socket;
+
+	while ((len = recv(client_sockfd, buf, BUFSIZ, 0)) > 0)
+	{
+		buf[len] = '\0';
+		printf("%s\n", buf);
+
+		if (send(client_sockfd, buf, len, 0) < 0)
+		{
+			perror("write");
+			exit(1);
+		}
+	}
+
+	close(client_sockfd);
+
+	return NULL;
+}
 
 int main()
 {	
 	int server_sockfd;
-	int client_sockfd;
+	int client_sockfd[100];
+	pthread_t thread[100];
+	int count = 0;
 
 	struct sockaddr_in my_addr;
 	struct sockaddr_in remote_addr;
@@ -40,30 +67,24 @@ int main()
 	printf("After listen\n");
 
 	sin_size = sizeof(struct sockaddr_in);
-	if ((client_sockfd = accept(server_sockfd, (struct sockaddr *)&remote_addr, &sin_size)) < 0)
+	while (count < 100)
 	{
-		perror("accpet");
-		return 1;
-	}
-	printf("Accept client %s\n", inet_ntoa(remote_addr.sin_addr));
-	
-	while ((len = recv(client_sockfd, buf, BUFSIZ, 0)) > 0)
-	{
-		buf[len] = '\0';
-		printf("%s\n", buf);
-
-		if (send(client_sockfd, buf, len, 0) < 0)
+		if ((client_sockfd[count] = accept(server_sockfd, (struct sockaddr *)&remote_addr, &sin_size)) < 0)
 		{
-			perror("write");
+			perror("accpet");
 			return 1;
 		}
-		
+
+		if (pthread_create(&thread[count], NULL, handle_thread, &client_sockfd[count]))
+		{
+			perror("Thread");
+			return 1;
+		}
+		count ++;
+		printf("Accept client %s\n", inet_ntoa(remote_addr.sin_addr));
 	}
 
-	close(client_sockfd);
 	close(server_sockfd);
 	return 0;
-
-	
 	
 }
